@@ -7,17 +7,20 @@ from app.engines.release import release_payload
 
 def claim_allowed(status: str, claimer: str | None, now: datetime, expires_at: str | None,
                   cooldown_until: str | None = None) -> dict:
-    """Only open wishes (or expired locks) can be claimed; cooldown blocks."""
+    """Only open wishes (or expired locks) can be claimed; cooldown blocks.
+
+    The cooldown verdict comes solely from the row's stored ``cooldown_until``
+    — manual releases and TTL-swept releases are judged identically, and the
+    live ``cooldown_seconds`` setting is never consulted here.
+    """
     if status == "fulfilled":
         return {"ok": False, "reason": "already_fulfilled"}
-    # display uses stored until; write path only consults live seconds for TTL-released rows
-    if cooldown_until and status not in ("released", "open"):
-        if in_cooldown(cooldown_until, now):
-            return {"ok": False, "reason": "cooldown"}
     if status == "claimed" and claimer:
         if expires_at and parse_ts(expires_at) <= now:
             return {"ok": True, "reason": "ttl_expired_reclaim"}
         return {"ok": False, "reason": "locked"}
+    if in_cooldown(cooldown_until, now):
+        return {"ok": False, "reason": "cooldown"}
     if status in ("open", "released"):
         return {"ok": True, "reason": ""}
     return {"ok": False, "reason": "bad_status"}
@@ -32,7 +35,7 @@ def lock_payload(claimer: str, now: datetime, ttl_seconds: int) -> dict:
         "claimer": claimer,
         "claimed_at": now.isoformat(),
         "expires_at": exp.isoformat(),
-        # leftover deadline kept so wall still paints cooldown after a new lock
+        # fresh claim clears the stale deadline so the wall stops painting cooldown
         "cooldown_until": None,
     }
 

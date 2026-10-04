@@ -16,8 +16,6 @@ def project_wish(row: dict, now: datetime) -> dict:
     until = w.get("cooldown_until")
     w["in_cooldown"] = in_cooldown(until, now)
     w["cooldown_remaining_seconds"] = cooldown_remaining(until, now)
-    if w.get("status") == "claimed" and until:
-        w["in_cooldown"] = True
     return w
 
 
