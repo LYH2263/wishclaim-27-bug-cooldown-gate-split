@@ -9,7 +9,7 @@
     <p v-if="err" class="err">{{ err }}</p>
     <input v-model="claimer" placeholder="你的名字" />
     <div style="display:flex;gap:8px;flex-wrap:wrap">
-      <button @click="claim" :disabled="false">认领锁定</button>
+      <button @click="claim" :disabled="w.in_cooldown">认领锁定</button>
       <button class="ghost" @click="release">释放</button>
       <button class="ghost" @click="fulfill">核销完成</button>
     </div>

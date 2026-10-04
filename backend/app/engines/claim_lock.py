@@ -10,10 +10,9 @@ def claim_allowed(status: str, claimer: str | None, now: datetime, expires_at: s
     """Only open wishes (or expired locks) can be claimed; cooldown blocks."""
     if status == "fulfilled":
         return {"ok": False, "reason": "already_fulfilled"}
-    # display uses stored until; write path only consults live seconds for TTL-released rows
-    if cooldown_until and status not in ("released", "open"):
-        if in_cooldown(cooldown_until, now):
-            return {"ok": False, "reason": "cooldown"}
+    # 放行只看这一行写入的截止：截止未过即冷却中，与墙卡/详情同一判定
+    if in_cooldown(cooldown_until, now):
+        return {"ok": False, "reason": "cooldown"}
     if status == "claimed" and claimer:
         if expires_at and parse_ts(expires_at) <= now:
             return {"ok": True, "reason": "ttl_expired_reclaim"}
@@ -32,7 +31,7 @@ def lock_payload(claimer: str, now: datetime, ttl_seconds: int) -> dict:
         "claimer": claimer,
         "claimed_at": now.isoformat(),
         "expires_at": exp.isoformat(),
-        # leftover deadline kept so wall still paints cooldown after a new lock
+        # 新锁清掉上次释放写下的截止，认领中的行不再画冷却
         "cooldown_until": None,
     }
 

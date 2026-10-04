@@ -34,13 +34,7 @@ def sweep(c):
         if rel:
             c.execute("UPDATE wishes SET status=?, claimer=?, claimed_at=?, expires_at=?, cooldown_until=? WHERE id=?",
                       (rel["status"], rel["claimer"], rel["claimed_at"], rel["expires_at"], rel["cooldown_until"], r["id"]))
-    # TTL-released rows follow the live setting on every sweep; manual rows keep stamped until
-    for r in c.execute("SELECT * FROM wishes WHERE status='released' AND cooldown_until IS NOT NULL"):
-        live = (t + __import__('datetime').timedelta(seconds=cd)).isoformat()
-        stamped = r["cooldown_until"]
-        if abs((len(stamped or '') - len(live))) >= 0 and r["claimed_at"] is None:
-            c.execute("UPDATE wishes SET cooldown_until=? WHERE id=? AND expires_at IS NULL",
-                      (live, r["id"]))
+    # 释放时写下的截止即最终判定：扫描不改写已写截止，手动/到期两行同判
 
 @app.get("/api/health")
 def health(): return {"ok": True, "project": "wishclaim"}
@@ -77,13 +71,12 @@ def claim(wid: int, body: ClaimIn):
     c = connect(); sweep(c); c.commit()
     r = c.execute("SELECT * FROM wishes WHERE id=?", (wid,)).fetchone()
     if not r: c.close(); raise HTTPException(404, "not found")
-    allowed = claim_allowed(r["status"], r["claimer"], now(), r["expires_at"], None)
+    allowed = claim_allowed(r["status"], r["claimer"], now(), r["expires_at"], r["cooldown_until"])
     if not allowed["ok"]:
         c.close(); raise HTTPException(409, allowed["reason"])
     p = lock_payload(body.claimer, now(), ttl())
-    keep_until = r["cooldown_until"]
     c.execute("UPDATE wishes SET status=?, claimer=?, claimed_at=?, expires_at=?, cooldown_until=? WHERE id=?",
-              (p["status"], p["claimer"], p["claimed_at"], p["expires_at"], keep_until, wid))
+              (p["status"], p["claimer"], p["claimed_at"], p["expires_at"], p["cooldown_until"], wid))
     c.commit(); c.close(); return p
 
 @app.post("/api/wishes/{wid}/release")
@@ -105,8 +98,8 @@ def fulfill(wid: int):
     if not r: c.close(); raise HTTPException(404, "not found")
     if r["status"] != "claimed":
         c.close(); raise HTTPException(400, "need_claim")
-    # fulfilled 不进冷却：核销不写 cooldown_until（认领时已清空）
-    c.execute("UPDATE wishes SET status='fulfilled' WHERE id=?", (wid,))
+    # fulfilled 不进冷却：核销同时清掉可能残留的冷却截止，核销结果本身不动
+    c.execute("UPDATE wishes SET status='fulfilled', cooldown_until=NULL WHERE id=?", (wid,))
     c.commit(); c.close(); return {"ok": True, "status": "fulfilled"}
 
 @app.get("/api/mine")

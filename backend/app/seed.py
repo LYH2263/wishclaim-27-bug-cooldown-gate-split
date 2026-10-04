@@ -20,6 +20,8 @@ def init_db():
         c.execute("ALTER TABLE wishes ADD COLUMN cooldown_until TEXT")
     for k, v in DEFAULT_SETTINGS.items():
         c.execute("INSERT OR IGNORE INTO settings(key,value) VALUES (?,?)", (k, v))
+    # 已核销的行不应进入冷却：清掉历史遗留的截止，不动核销结果本身
+    c.execute("UPDATE wishes SET cooldown_until=NULL WHERE status='fulfilled' AND cooldown_until IS NOT NULL")
     if c.execute("SELECT COUNT(*) c FROM wishes").fetchone()["c"] == 0:
         c.executemany(
             "INSERT INTO wishes(title,note,status,claimer,claimed_at,expires_at,data_quality) VALUES (?,?,?,?,?,?,?)",
